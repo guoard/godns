@@ -2,6 +2,7 @@ package dns
 
 import (
 	"errors"
+	"fmt"
 	"net"
 )
 
@@ -57,10 +58,10 @@ func ReadDnsRecord(buffer *BytePacketBuffer) (DnsRecord, error) {
 		}
 
 		addr := net.IPv4(
-			byte((rawAddr>>24) & 0xFF),
-			byte((rawAddr>>16) & 0xFF),
-			byte((rawAddr>>8) & 0xFF),
-			byte((rawAddr>>0) & 0xFF),
+			byte((rawAddr>>24)&0xFF),
+			byte((rawAddr>>16)&0xFF),
+			byte((rawAddr>>8)&0xFF),
+			byte((rawAddr>>0)&0xFF),
 		)
 
 		return ARecord{
@@ -84,4 +85,30 @@ func ReadDnsRecord(buffer *BytePacketBuffer) (DnsRecord, error) {
 	}
 
 	return nil, errors.New("unknown query type")
+}
+
+func WriteDnsRecord(dr DnsRecord, buffer *BytePacketBuffer) (int, error) {
+	startPos := buffer.Pos
+
+	switch record := (dr).(type) {
+	case ARecord:
+		// TODO: handle errors for all writes
+		buffer.writeQname(record.Domain)
+		buffer.writeU16(uint16(A))
+		buffer.writeU16(1)
+		buffer.writeU32(record.TTL)
+		buffer.writeU16(4)
+
+		octets := record.Addr.To4()
+		buffer.writeU8(octets[0])
+		buffer.writeU8(octets[1])
+		buffer.writeU8(octets[2])
+		buffer.writeU8(octets[3])
+	case UnknownRecord:
+		fmt.Printf("Skipping record: %+v\n", record)
+	default:
+		return 0, errors.New("unknown record type")
+	}
+
+	return buffer.Pos - startPos, nil
 }

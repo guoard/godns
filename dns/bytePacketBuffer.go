@@ -8,7 +8,7 @@ import (
 
 type BytePacketBuffer struct {
 	Buf [512]byte
-	pos int
+	Pos int
 }
 
 // This gives us a fresh buffer for holding the packet contents, and a
@@ -19,23 +19,23 @@ func NewBytePacketBuffer() *BytePacketBuffer {
 
 // Step the buffer position forward a specific number of steps
 func (bpb *BytePacketBuffer) step(steps int) error {
-	bpb.pos += steps
+	bpb.Pos += steps
 	return nil
 }
 
 // Change the buffer position
 func (bpb *BytePacketBuffer) seek(pos int) error {
-	bpb.pos = pos
+	bpb.Pos = pos
 	return nil
 }
 
 // Read a single byte and move the position one step forward
 func (bpb *BytePacketBuffer) read() (byte, error) {
-	if bpb.pos >= 512 {
+	if bpb.Pos >= 512 {
 		return 0, errors.New("end of buffer")
 	}
-	res := bpb.Buf[bpb.pos]
-	bpb.pos += 1
+	res := bpb.Buf[bpb.Pos]
+	bpb.Pos += 1
 
 	return res, nil
 }
@@ -50,10 +50,10 @@ func (bpb *BytePacketBuffer) get(pos int) (byte, error) {
 
 // Get a range of bytes
 func (bpb *BytePacketBuffer) getRange(start int, length int) ([]byte, error) {
-	if start + length >= 512 {
+	if start+length >= 512 {
 		return nil, errors.New("end of buffer")
 	}
-	return bpb.Buf[start : start + length], nil
+	return bpb.Buf[start : start+length], nil
 }
 
 // Read two bytes, stepping two steps forward
@@ -109,7 +109,7 @@ func (bpb *BytePacketBuffer) readQname(outstr *string) error {
 	// allows us to move the shared position to a point past our current
 	// qname, while keeping track of our progress on the current qname
 	// using this variable.
-	pos := bpb.pos
+	pos := bpb.Pos
 
 	// track whether or not we've jumped
 	jumped := false
@@ -161,13 +161,13 @@ func (bpb *BytePacketBuffer) readQname(outstr *string) error {
 			jumpsPerformed += 1
 
 			continue
-			} else {
+		} else {
 			// The base scenario, where we're reading a single label and
 			// appending it to the output:
 
 			// Move a single byte forward to move past the length byte.
 			pos += 1
-			
+
 			// Domain names are terminated by an empty label of length 0,
 			// so if the length is zero we're done.
 			if len == 0 {
@@ -202,10 +202,95 @@ func (bpb *BytePacketBuffer) readQname(outstr *string) error {
 	return nil
 }
 
+func (bpb *BytePacketBuffer) write(val uint8) error {
+	if bpb.Pos >= 512 {
+		return errors.New("end of buffer")
+	}
+	bpb.Buf[bpb.Pos] = val
+	bpb.Pos += 1
+
+	return nil
+}
+
+func (bpb *BytePacketBuffer) writeU8(val uint8) error {
+	err := bpb.write(val)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (bpb *BytePacketBuffer) writeU16(val uint16) error {
+	err := bpb.write(uint8(val >> 8))
+	if err != nil {
+		return err
+	}
+
+	err = bpb.write(uint8(val & 0xFF))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (bpb *BytePacketBuffer) writeU32(val uint32) error {
+	err := bpb.write(uint8((val >> 24) & 0xFF))
+	if err != nil {
+		return err
+	}
+
+	err = bpb.write(uint8((val >> 16) & 0xFF))
+	if err != nil {
+		return err
+	}
+
+	err = bpb.write(uint8((val >> 8) & 0xFF))
+	if err != nil {
+		return err
+	}
+
+	err = bpb.write(uint8((val >> 0) & 0xFF))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (bpb *BytePacketBuffer) writeQname(qname string) error {
+	for _, label := range strings.Split(qname, ".") {
+		len := len(label)
+		if len > 0x3f {
+			return errors.New("single label exceeds 63 characters of length")
+		}
+
+		err := bpb.writeU8(uint8(len))
+		if err != nil {
+			return err
+		}
+
+		for _, b := range []byte(label) {
+			err := bpb.writeU8(b)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	err := bpb.writeU8(0)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 type ResultCode int
 
 const (
-	NOERROR  ResultCode = iota
+	NOERROR ResultCode = iota
 	FORMERR
 	SERVFAIL
 	NXDOMAIN
@@ -214,24 +299,24 @@ const (
 )
 
 type DnsHeader struct {
-	id                      uint16
+	Id uint16
 
-	recursion_desired       bool
-	truncated_message       bool
-	authoritativeAnswer    bool
-	opcode                  uint8
-	response                bool
+	RecursionDesired    bool
+	truncatedMessage    bool
+	authoritativeAnswer bool
+	opcode              uint8
+	response            bool
 
-	rescode                 ResultCode
-	checkingDisabled       bool
-	authed_data             bool
-	z                       bool
-	recursionAvailable     bool
+	rescode            ResultCode
+	checkingDisabled   bool
+	authedData         bool
+	z                  bool
+	recursionAvailable bool
 
-	questions               uint16
-	answers                 uint16
-	authoritativeEntries   uint16
-	resourceEntries        uint16
+	Questions            uint16
+	answers              uint16
+	authoritativeEntries uint16
+	resourceEntries      uint16
 }
 
 func NewDnsHeader() DnsHeader {
@@ -244,7 +329,7 @@ func (header *DnsHeader) read(buffer *BytePacketBuffer) error {
 		return err
 	}
 
-	header.id = id;
+	header.Id = id
 
 	flags, err := buffer.readU16()
 	if err != nil {
@@ -252,19 +337,19 @@ func (header *DnsHeader) read(buffer *BytePacketBuffer) error {
 	}
 	a := uint8(flags >> 8)
 	b := uint8(flags & 0xFF)
-	header.recursion_desired = (a & (1 << 0)) > 0
-	header.truncated_message = (a & (1 << 1)) > 0
+	header.RecursionDesired = (a & (1 << 0)) > 0
+	header.truncatedMessage = (a & (1 << 1)) > 0
 	header.authoritativeAnswer = (a & (1 << 2)) > 0
 	header.opcode = (a >> 3) & 0x0F
 	header.response = (a & (1 << 7)) > 0
 
 	header.rescode = ResultCode(b & 0x0F)
 	header.checkingDisabled = (b & (1 << 4)) > 0
-	header.authed_data = (b & (1 << 5)) > 0
+	header.authedData = (b & (1 << 5)) > 0
 	header.z = (b & (1 << 6)) > 0
 	header.recursionAvailable = (b & (1 << 7)) > 0
 
-	header.questions, err = buffer.readU16()
+	header.Questions, err = buffer.readU16()
 	if err != nil {
 		return err
 	}
@@ -280,6 +365,57 @@ func (header *DnsHeader) read(buffer *BytePacketBuffer) error {
 	}
 
 	header.resourceEntries, err = buffer.readU16()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (h *DnsHeader) write(buffer *BytePacketBuffer) error {
+	err := buffer.writeU16(h.Id)
+	if err != nil {
+		return err
+	}
+
+	flags1 := uint8(boolToUint(h.RecursionDesired))
+	flags1 |= uint8(boolToUint(h.truncatedMessage)) << 1
+	flags1 |= uint8(boolToUint(h.authoritativeAnswer)) << 2
+	flags1 |= h.opcode << 3
+	flags1 |= uint8(boolToUint(h.response)) << 7
+
+	err = buffer.writeU8(flags1)
+	if err != nil {
+		return err
+	}
+
+	flags2 := uint8(h.rescode)
+	flags2 |= uint8(boolToUint(h.checkingDisabled)) << 4
+	flags2 |= uint8(boolToUint(h.authedData)) << 5
+	flags2 |= uint8(boolToUint(h.z)) << 6
+	flags2 |= uint8(boolToUint(h.recursionAvailable)) << 7
+
+	err = buffer.writeU8(flags2)
+	if err != nil {
+		return err
+	}
+
+	err = buffer.writeU16(h.Questions)
+	if err != nil {
+		return err
+	}
+
+	err = buffer.writeU16(h.answers)
+	if err != nil {
+		return err
+	}
+
+	err = buffer.writeU16(h.authoritativeEntries)
+	if err != nil {
+		return err
+	}
+
+	err = buffer.writeU16(h.resourceEntries)
 	if err != nil {
 		return err
 	}
