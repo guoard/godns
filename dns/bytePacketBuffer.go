@@ -422,3 +422,23 @@ func (h *DnsHeader) write(buffer *BytePacketBuffer) error {
 
 	return nil
 }
+
+func (bpb *BytePacketBuffer) set(pos int, val byte) error {
+	bpb.Buf[pos] = val
+
+	return nil
+}
+
+func (bpb *BytePacketBuffer) setU16(pos int, val uint16) error {
+	err := bpb.set(pos, byte(val>>8))
+	if err != nil {
+		return err
+	}
+
+	err = bpb.set(pos+1, byte(val&0xFF))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

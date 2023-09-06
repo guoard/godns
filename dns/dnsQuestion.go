@@ -2,10 +2,10 @@ package dns
 
 type DnsQuestion struct {
 	Name  string
-	Qtype QueryType
+	Qtype uint16
 }
 
-func newDnsQuestion(name string, qtype QueryType) DnsQuestion {
+func newDnsQuestion(name string, qtype uint16) DnsQuestion {
 	return DnsQuestion{
 		Name:  name,
 		Qtype: qtype,
@@ -22,7 +22,7 @@ func (dq *DnsQuestion) read(buffer *BytePacketBuffer) error {
 	if err != nil {
 		return err
 	}
-	dq.Qtype = QueryType(qtypeNum)
+	dq.Qtype = qtypeNum
 
 	_, err = buffer.readU16() // class
 	if err != nil {
@@ -42,7 +42,7 @@ func (dq *DnsQuestion) write(buffer *BytePacketBuffer) error {
 	if err != nil {
 		return err
 	}
-	
+
 	err = buffer.writeU16(1)
 	if err != nil {
 		return err

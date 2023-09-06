@@ -2,16 +2,16 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"net"
+	"os"
 
 	"github.com/guoard/godns/dns"
 )
 
 func main() {
-	// Perform an A query for google.com
-	qname := "www.yahoo.com"
-	qtype := dns.A
+	// Perform an MX query for yahoo.com
+	qname := "yahoo.com"
+	qtype := dns.MX
 
 	// Using Google's public DNS server
 	server := "8.8.8.8:53"
@@ -34,8 +34,8 @@ func main() {
 		},
 		Questions: []dns.DnsQuestion{
 			{
-				Name: qname,
-				Qtype: qtype,
+				Name:  qname,
+				Qtype: qtype.ToNum(),
 			},
 		},
 	}
