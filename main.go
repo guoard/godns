@@ -10,7 +10,7 @@ import (
 
 func main() {
 	// Perform an A query for google.com
-	qname := "google.com"
+	qname := "www.yahoo.com"
 	qtype := dns.A
 
 	// Using Google's public DNS server

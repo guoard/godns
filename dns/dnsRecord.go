@@ -70,7 +70,7 @@ func ReadDnsRecord(buffer *BytePacketBuffer) (DnsRecord, error) {
 			TTL:    ttl,
 		}, nil
 
-	case UNKNOWN:
+	default:
 		err := buffer.step(int(dataLen))
 		if err != nil {
 			return nil, err
@@ -83,8 +83,6 @@ func ReadDnsRecord(buffer *BytePacketBuffer) (DnsRecord, error) {
 			TTL:     ttl,
 		}, nil
 	}
-
-	return nil, errors.New("unknown query type")
 }
 
 func WriteDnsRecord(dr DnsRecord, buffer *BytePacketBuffer) (int, error) {
