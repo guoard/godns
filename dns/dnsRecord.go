@@ -6,8 +6,7 @@ import (
 	"net"
 )
 
-type DnsRecord interface {
-}
+type DnsRecord interface{}
 
 type UnknownRecord struct {
 	Domain  string
@@ -49,35 +48,35 @@ type AAAARecord struct {
 
 func ReadDnsRecord(buffer *BytePacketBuffer) (DnsRecord, error) {
 	var domain string
-	err := buffer.readQname(&domain)
+	err := buffer.ReadQname(&domain)
 	if err != nil {
 		return nil, err
 	}
 
-	qtypeNum, err := buffer.readU16()
+	qtypeNum, err := buffer.ReadU16()
 	if err != nil {
 		return nil, err
 	}
 	qtype := QueryTypeFromNum(qtypeNum)
 
-	_, err = buffer.readU16()
+	_, err = buffer.ReadU16()
 	if err != nil {
 		return nil, err
 	}
 
-	ttl, err := buffer.readU32()
+	ttl, err := buffer.ReadU32()
 	if err != nil {
 		return nil, err
 	}
 
-	dataLen, err := buffer.readU16()
+	dataLen, err := buffer.ReadU16()
 	if err != nil {
 		return nil, err
 	}
 
 	switch qtype {
 	case A:
-		rawAddr, err := buffer.readU32()
+		rawAddr, err := buffer.ReadU32()
 		if err != nil {
 			return nil, err
 		}
@@ -96,19 +95,19 @@ func ReadDnsRecord(buffer *BytePacketBuffer) (DnsRecord, error) {
 		}, nil
 
 	case AAAA:
-		rawAddr1, err := buffer.readU32()
+		rawAddr1, err := buffer.ReadU32()
 		if err != nil {
 			return nil, err
 		}
-		rawAddr2, err := buffer.readU32()
+		rawAddr2, err := buffer.ReadU32()
 		if err != nil {
 			return nil, err
 		}
-		rawAddr3, err := buffer.readU32()
+		rawAddr3, err := buffer.ReadU32()
 		if err != nil {
 			return nil, err
 		}
-		rawAddr4, err := buffer.readU32()
+		rawAddr4, err := buffer.ReadU32()
 		if err != nil {
 			return nil, err
 		}
@@ -128,7 +127,7 @@ func ReadDnsRecord(buffer *BytePacketBuffer) (DnsRecord, error) {
 
 	case NS:
 		var ns string
-		err := buffer.readQname(&ns)
+		err := buffer.ReadQname(&ns)
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +140,7 @@ func ReadDnsRecord(buffer *BytePacketBuffer) (DnsRecord, error) {
 
 	case CNAME:
 		var cname string
-		err := buffer.readQname(&cname)
+		err := buffer.ReadQname(&cname)
 		if err != nil {
 			return nil, err
 		}
@@ -153,12 +152,12 @@ func ReadDnsRecord(buffer *BytePacketBuffer) (DnsRecord, error) {
 		}, nil
 
 	case MX:
-		priority, err := buffer.readU16()
+		priority, err := buffer.ReadU16()
 		if err != nil {
 			return nil, err
 		}
 		var mx string
-		err = buffer.readQname(&mx)
+		err = buffer.ReadQname(&mx)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +170,7 @@ func ReadDnsRecord(buffer *BytePacketBuffer) (DnsRecord, error) {
 		}, nil
 
 	default:
-		err := buffer.step(int(dataLen))
+		err := buffer.Step(int(dataLen))
 		if err != nil {
 			return nil, err
 		}
@@ -191,93 +190,93 @@ func WriteDnsRecord(dr DnsRecord, buffer *BytePacketBuffer) (int, error) {
 
 	switch record := (dr).(type) {
 	case ARecord:
-		buffer.writeQname(record.Domain)
-		buffer.writeU16(A.ToNum())
-		buffer.writeU16(1)
-		buffer.writeU32(record.TTL)
-		buffer.writeU16(4)
+		buffer.WriteQname(record.Domain)
+		buffer.WriteU16(A.ToNum())
+		buffer.WriteU16(1)
+		buffer.WriteU32(record.TTL)
+		buffer.WriteU16(4)
 
 		octets := record.Addr.To4()
-		buffer.writeU8(octets[0])
-		buffer.writeU8(octets[1])
-		buffer.writeU8(octets[2])
-		buffer.writeU8(octets[3])
+		buffer.WriteU8(octets[0])
+		buffer.WriteU8(octets[1])
+		buffer.WriteU8(octets[2])
+		buffer.WriteU8(octets[3])
 	case NSRecord:
-		buffer.writeQname(record.Domain)
-		buffer.writeU16(NS.ToNum())
-		buffer.writeU16(1)
-		buffer.writeU32(record.TTL)
+		buffer.WriteQname(record.Domain)
+		buffer.WriteU16(NS.ToNum())
+		buffer.WriteU16(1)
+		buffer.WriteU32(record.TTL)
 
 		pos := buffer.Pos
-		buffer.writeU16(0)
+		buffer.WriteU16(0)
 
-		buffer.writeQname(record.Host)
+		buffer.WriteQname(record.Host)
 
 		size := buffer.Pos - (pos + 2)
-		buffer.setU16(pos, uint16(size))
+		buffer.SetU16(pos, uint16(size))
 
 	case CNAMERecord:
-		err := buffer.writeQname(record.Domain)
+		err := buffer.WriteQname(record.Domain)
 		if err != nil {
 			return 0, err
 		}
 
-		err = buffer.writeU16(CNAME.ToNum())
+		err = buffer.WriteU16(CNAME.ToNum())
 		if err != nil {
 			return 0, err
 		}
 
-		err = buffer.writeU16(1)
+		err = buffer.WriteU16(1)
 		if err != nil {
 			return 0, err
 		}
 
-		err = buffer.writeU32(record.TTL)
+		err = buffer.WriteU32(record.TTL)
 		if err != nil {
 			return 0, err
 		}
 
 		pos := buffer.Pos
-		err = buffer.writeU16(0)
+		err = buffer.WriteU16(0)
 		if err != nil {
 			return 0, err
 		}
 
-		err = buffer.writeQname(record.Host)
+		err = buffer.WriteQname(record.Host)
 		if err != nil {
 			return 0, err
 		}
 
 		size := buffer.Pos - (pos + 2)
-		err = buffer.setU16(pos, uint16(size))
+		err = buffer.SetU16(pos, uint16(size))
 		if err != nil {
 			return 0, err
 		}
 
 	case MXRecord:
-		buffer.writeQname(record.Domain)
-		buffer.writeU16(MX.ToNum())
-		buffer.writeU16(1)
-		buffer.writeU32(record.TTL)
+		buffer.WriteQname(record.Domain)
+		buffer.WriteU16(MX.ToNum())
+		buffer.WriteU16(1)
+		buffer.WriteU32(record.TTL)
 
 		pos := buffer.Pos
-		buffer.writeU16(0)
+		buffer.WriteU16(0)
 
-		buffer.writeU16(record.Priority)
-		buffer.writeQname(record.Host)
+		buffer.WriteU16(record.Priority)
+		buffer.WriteQname(record.Host)
 
 		size := buffer.Pos - (pos + 2)
-		buffer.setU16(pos, uint16(size))
+		buffer.SetU16(pos, uint16(size))
 
 	case AAAARecord:
-		buffer.writeQname(record.Domain)
-		buffer.writeU16(AAAA.ToNum())
-		buffer.writeU16(1)
-		buffer.writeU32(record.TTL)
-		buffer.writeU16(16)
+		buffer.WriteQname(record.Domain)
+		buffer.WriteU16(AAAA.ToNum())
+		buffer.WriteU16(1)
+		buffer.WriteU32(record.TTL)
+		buffer.WriteU16(16)
 
 		for octet := range record.Addr.To16() {
-			buffer.writeU16(uint16(octet))
+			buffer.WriteU16(uint16(octet))
 		}
 
 	case UnknownRecord:

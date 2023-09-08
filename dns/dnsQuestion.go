@@ -5,26 +5,28 @@ type DnsQuestion struct {
 	Qtype uint16
 }
 
-func newDnsQuestion(name string, qtype uint16) DnsQuestion {
+// NewDnsQuestion creates a new DnsQuestion with the provided name and qtype.
+func NewDnsQuestion(name string, qtype uint16) DnsQuestion {
 	return DnsQuestion{
 		Name:  name,
 		Qtype: qtype,
 	}
 }
 
-func (dq *DnsQuestion) read(buffer *BytePacketBuffer) error {
-	err := buffer.readQname(&dq.Name)
+// Read reads a DNS question from the BytePacketBuffer.
+func (dq *DnsQuestion) Read(buffer *BytePacketBuffer) error {
+	err := buffer.ReadQname(&dq.Name)
 	if err != nil {
 		return err
 	}
 
-	qtypeNum, err := buffer.readU16() // qtype
+	qtypeNum, err := buffer.ReadU16()
 	if err != nil {
 		return err
 	}
 	dq.Qtype = qtypeNum
 
-	_, err = buffer.readU16() // class
+	_, err = buffer.ReadU16()
 	if err != nil {
 		return err
 	}
@@ -32,18 +34,19 @@ func (dq *DnsQuestion) read(buffer *BytePacketBuffer) error {
 	return nil
 }
 
-func (dq *DnsQuestion) write(buffer *BytePacketBuffer) error {
-	err := buffer.writeQname(dq.Name)
+// Write writes a DNS question to the BytePacketBuffer.
+func (dq *DnsQuestion) Write(buffer *BytePacketBuffer) error {
+	err := buffer.WriteQname(dq.Name)
 	if err != nil {
 		return err
 	}
 
-	err = buffer.writeU16(uint16(dq.Qtype))
+	err = buffer.WriteU16(uint16(dq.Qtype))
 	if err != nil {
 		return err
 	}
 
-	err = buffer.writeU16(1)
+	err = buffer.WriteU16(1)
 	if err != nil {
 		return err
 	}

@@ -11,36 +11,27 @@ const (
 	AAAA
 )
 
+var queryTypeMapping = map[uint16]QueryType{
+	1:  A,
+	2:  NS,
+	5:  CNAME,
+	15: MX,
+	28: AAAA,
+}
+
 func QueryTypeFromNum(num uint16) QueryType {
-	switch num {
-	case 1:
-		return A
-	case 2:
-		return NS
-	case 5:
-		return CNAME
-	case 15:
-		return MX
-	case 28:
-		return AAAA
-	default:
-		return UNKNOWN
+	qt, found := queryTypeMapping[num]
+	if found {
+		return qt
 	}
+	return UNKNOWN
 }
 
 func (qt QueryType) ToNum() uint16 {
-	switch qt {
-	case A:
-		return 1
-	case NS:
-		return 2
-	case CNAME:
-		return 5
-	case MX:
-		return 15
-	case AAAA:
-		return 28
-	default: // unknown
-		return 0
+	for num, queryType := range queryTypeMapping {
+		if qt == queryType {
+			return num
+		}
 	}
+	return 0
 }
