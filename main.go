@@ -8,10 +8,7 @@ import (
 	"github.com/guoard/godns/dns"
 )
 
-func lookup(qname string, qtype dns.QueryType) (dns.DnsPacket, error) {
-	// Forward queries to Google's public DNS
-	server := "8.8.8.8:53"
-
+func lookup(qname string, qtype dns.QueryType, server net.UDPAddr) (dns.DnsPacket, error) {
 	socket, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 43210})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error binding UDP socket:", err)
@@ -36,12 +33,7 @@ func lookup(qname string, qtype dns.QueryType) (dns.DnsPacket, error) {
 	var reqBuffer dns.BytePacketBuffer
 	packet.Write(&reqBuffer)
 
-	serverAddr, err := net.ResolveUDPAddr("udp", server)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error resolving server address:", err)
-		os.Exit(1)
-	}
-	_, err = socket.WriteTo(reqBuffer.Buf[:reqBuffer.Pos], serverAddr)
+	_, err = socket.WriteTo(reqBuffer.Buf[:reqBuffer.Pos], &server)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error sending packet to server:", err)
 		os.Exit(1)
@@ -96,7 +88,7 @@ func handleQuery(socket *net.UDPConn) error {
 		// fail, in which case the `SERVFAIL` response code is set to indicate
 		// as much to the client. If rather everything goes as planned, the
 		// question and response records as copied into our response packet.
-		result, err := lookup(question.Name, dns.QueryTypeFromNum(question.Qtype))
+		result, err := recursiveLookup(question.Name, dns.QueryTypeFromNum(question.Qtype))
 		if err == nil {
 			packet.Questions = append(packet.Questions, question)
 			packet.Header.Rescode = result.Header.Rescode
@@ -137,6 +129,70 @@ func handleQuery(socket *net.UDPConn) error {
 
 	_, err = socket.WriteToUDP(data, src)
 	return err
+}
+
+func recursiveLookup(qname string, qtype dns.QueryType) (*dns.DnsPacket, error) {
+	// For now we're always starting with *a.root-servers.net*.
+	ns := net.ParseIP("198.41.0.4").To4()
+	if ns == nil {
+		return nil, fmt.Errorf("failed to parse initial nameserver IP")
+	}
+
+	// Since it might take an arbitrary number of steps, we enter an unbounded loop.
+	for {
+		fmt.Printf("attempting lookup of %v %s with ns %s\n", qtype, qname, ns.String())
+
+		// The next step is to send the query to the active server.
+		server := net.UDPAddr{IP: ns, Port: 53}
+		response, err := lookup(qname, qtype, server)
+		if err != nil {
+			return nil, err
+		}
+
+		// If there are entries in the answer section, and no errors, we are done!
+		if len(response.Answers) > 0 && response.Header.Rescode == dns.NOERROR {
+			return &response, nil
+		}
+
+		// We might also get a "NXDOMAIN" reply, which is the authoritative name server's
+		// way of telling us that the name doesn't exist.
+		if response.Header.Rescode == dns.NXDOMAIN {
+			return &response, nil
+		}
+
+		// Otherwise, we'll try to find a new nameserver based on NS and a corresponding A
+		// record in the additional section. If this succeeds, we can switch the nameserver
+		// and retry the loop.
+		newNS := response.GetResolvedNs(qname)
+		if newNS != nil {
+			ns = newNS
+			continue
+		}
+
+		// If not, we'll have to resolve the IP of an NS record. If no NS records exist,
+		// we'll go with what the last server told us.
+		newNSName := response.GetUnresolvedNS(qname)
+		if newNSName != "" {
+			// Here we go down the rabbit hole by starting another lookup sequence in the
+			// midst of our current one. Hopefully, this will give us the IP of an appropriate
+			// nameserver.
+			recursiveResponse, err := recursiveLookup(newNSName, dns.A)
+			if err != nil {
+				return &response, err
+			}
+
+			// Finally, we pick a random IP from the result and restart the loop. If no such
+			// record is available, we again return the last result we got.
+			newNS := recursiveResponse.GetRandomA()
+			if newNS != nil {
+				ns = newNS
+			} else {
+				return &response, nil
+			}
+		} else {
+			return &response, nil
+		}
+	}
 }
 
 func main() {

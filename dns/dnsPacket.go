@@ -1,5 +1,10 @@
 package dns
 
+import (
+	"net"
+	"strings"
+)
+
 type DnsPacket struct {
 	Header      DnsHeader
 	Questions   []DnsQuestion
@@ -98,4 +103,52 @@ func (p *DnsPacket) Write(buffer *BytePacketBuffer) error {
 	}
 
 	return nil
+}
+
+func (p *DnsPacket) GetRandomA() net.IP {
+	for _, record := range p.Answers {
+		aRecord, ok := (record).(ARecord)
+		if ok {
+			return aRecord.Addr
+		}
+	}
+
+	return nil
+}
+
+func (p *DnsPacket) getNs(qname string) []NSRecord {
+	var nsRecords []NSRecord
+
+	for _, record := range p.Authorities {
+		nsRecord, ok := record.(NSRecord)
+			if ok && strings.HasSuffix(qname, nsRecord.Domain) {
+			nsRecords = append(nsRecords, nsRecord)
+		}
+	}
+	return nsRecords
+}
+
+func (p *DnsPacket) GetResolvedNs(qname string) net.IP {
+	nsRecords := p.getNs(qname)
+
+	for _, nsRecord := range nsRecords {
+		for _, record := range p.Resources {
+			aRecord, ok := record.(ARecord)
+			if ok && aRecord.Domain == nsRecord.Host {
+				return aRecord.Addr
+			}
+		}
+	}
+
+	return nil
+}
+
+func (p *DnsPacket) GetUnresolvedNS(qname string) string {
+	nsRecords := p.getNs(qname)
+
+	for _, nsRecord := range nsRecords {
+		return nsRecord.Host
+	}
+
+	return ""
 }
