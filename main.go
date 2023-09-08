@@ -8,15 +8,10 @@ import (
 	"github.com/guoard/godns/dns"
 )
 
-func main() {
-	// Perform an MX query for yahoo.com
-	qname := "yahoo.com"
-	qtype := dns.MX
-
-	// Using Google's public DNS server
+func lookup(qname string, qtype dns.QueryType) (dns.DnsPacket, error) {
+	// Forward queries to Google's public DNS
 	server := "8.8.8.8:53"
 
-	// Bind a UDP socket to an arbitrary port
 	socket, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 43210})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error binding UDP socket:", err)
@@ -24,8 +19,6 @@ func main() {
 	}
 	defer socket.Close()
 
-	// Build our query packet. It's important that we remember to set the
-	// `recursionDesired` flag. As noted earlier, the packet id is arbitrary.
 	packet := dns.DnsPacket{
 		Header: dns.DnsHeader{
 			Id:               6666,
@@ -40,11 +33,9 @@ func main() {
 		},
 	}
 
-	// Use the write method to write the packet to a buffer
 	var reqBuffer dns.BytePacketBuffer
 	packet.Write(&reqBuffer)
 
-	// Send the buffer to the server using our socket
 	serverAddr, err := net.ResolveUDPAddr("udp", server)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error resolving server address:", err)
@@ -56,7 +47,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Prepare for receiving the response
 	var resBuffer dns.BytePacketBuffer
 	_, _, err = socket.ReadFrom(resBuffer.Buf[:])
 	if err != nil {
@@ -64,24 +54,112 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parse the response packet and print the details
-	resPacket, err := dns.DnsPacketFromBuffer(&resBuffer)
+	return dns.DnsPacketFromBuffer(&resBuffer)
+}
+
+// Handle a single incoming packet
+func handleQuery(socket *net.UDPConn) error {
+	// With a socket ready, we can go ahead and read a packet. This will
+	// block until one is received.
+	reqBuffer := dns.NewBytePacketBuffer()
+
+	// The `ReadFromUDP` function will read the data into the provided buffer,
+	// and return the length of the data read as well as the source address.
+	// We're not interested in the length, but we need to keep track of the
+	// source in order to send our reply later on.
+	_, src, err := socket.ReadFromUDP(reqBuffer.Buf[:])
 	if err != nil {
-		fmt.Println("Error parsing response packet:", err)
-		os.Exit(1)
+		return err
 	}
 
-	fmt.Printf("%+v\n", resPacket.Header)
-	for _, q := range resPacket.Questions {
-		fmt.Printf("%+v\n", q)
+	// Next, `DnsPacketFromBuffer` is used to parse the raw bytes into
+	// a `DnsPacket`.
+	request, err := dns.DnsPacketFromBuffer(reqBuffer)
+	if err != nil {
+		return err
 	}
-	for _, rec := range resPacket.Answers {
-		fmt.Printf("%+v\n", rec)
+
+	// Create and initialize the response packet
+	packet := dns.NewDnsPacket()
+	packet.Header.Id = request.Header.Id
+	packet.Header.RecursionDesired = true
+	packet.Header.RecursionAvailable = true
+	packet.Header.Response = true
+
+	// In the normal case, exactly one question is present
+	if len(request.Questions) > 0 {
+		question := request.Questions[0]
+		fmt.Printf("Received query: %+v\n", question)
+
+		// Since all is set up and as expected, the query can be forwarded to the
+		// target server. There's always the possibility that the query will
+		// fail, in which case the `SERVFAIL` response code is set to indicate
+		// as much to the client. If rather everything goes as planned, the
+		// question and response records as copied into our response packet.
+		result, err := lookup(question.Name, dns.QueryTypeFromNum(question.Qtype))
+		if err == nil {
+			packet.Questions = append(packet.Questions, question)
+			packet.Header.Rescode = result.Header.Rescode
+
+			for _, rec := range result.Answers {
+				fmt.Printf("Answer: %+v\n", rec)
+				packet.Answers = append(packet.Answers, rec)
+			}
+			for _, rec := range result.Authorities {
+				fmt.Printf("Authority: %+v\n", rec)
+				packet.Authorities = append(packet.Authorities, rec)
+			}
+			for _, rec := range result.Resources {
+				fmt.Printf("Resource: %+v\n", rec)
+				packet.Resources = append(packet.Resources, rec)
+			}
+		} else {
+			packet.Header.Rescode = dns.SERVFAIL
+		}
+	} else {
+		// Being mindful of how unreliable input data from arbitrary senders can be, we
+		// need make sure that a question is actually present. If not, we return `FORMERR`
+		// to indicate that the sender made something wrong.
+		packet.Header.Rescode = dns.SERVFAIL
 	}
-	for _, rec := range resPacket.Authorities {
-		fmt.Printf("%+v\n", rec)
+
+	// The only thing remaining is to encode our response and send it off!
+	resBuffer := dns.NewBytePacketBuffer()
+	err = packet.Write(resBuffer)
+	if err != nil {
+		return err
 	}
-	for _, rec := range resPacket.Resources {
-		fmt.Printf("%+v\n", rec)
+
+	data, err := resBuffer.GetRange(0, resBuffer.Pos)
+	if err != nil {
+		return err
+	}
+
+	_, err = socket.WriteToUDP(data, src)
+	return err
+}
+
+func main() {
+	// Bind an UDP socket on port 2053
+	addr, err := net.ResolveUDPAddr("udp", "0.0.0.0:2053")
+	if err != nil {
+		fmt.Printf("Failed to resolve UDP address: %+v\n", err)
+		return
+	}
+
+	socket, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		fmt.Printf("Failed to bind UDP socket: %+v\n", err)
+		return
+	}
+	defer socket.Close()
+
+	// For now, queries are handled sequentially, so an infinite loop for servicing
+	// requests is initiated.
+	for {
+		err := handleQuery(socket)
+		if err != nil {
+			fmt.Printf("An error occurred: %+v\n", err)
+		}
 	}
 }

@@ -49,7 +49,7 @@ func (bpb *BytePacketBuffer) get(pos int) (byte, error) {
 }
 
 // Get a range of bytes
-func (bpb *BytePacketBuffer) getRange(start int, length int) ([]byte, error) {
+func (bpb *BytePacketBuffer) GetRange(start int, length int) ([]byte, error) {
 	if start+length >= 512 {
 		return nil, errors.New("end of buffer")
 	}
@@ -179,7 +179,7 @@ func (bpb *BytePacketBuffer) readQname(outstr *string) error {
 
 			// Extract the actual ASCII bytes for this label and append them
 			// to the output buffer.
-			strBuffer, err := bpb.getRange(pos, int(len))
+			strBuffer, err := bpb.GetRange(pos, int(len))
 			if err != nil {
 				return err
 			}
@@ -305,13 +305,13 @@ type DnsHeader struct {
 	truncatedMessage    bool
 	authoritativeAnswer bool
 	opcode              uint8
-	response            bool
+	Response            bool
 
-	rescode            ResultCode
+	Rescode            ResultCode
 	checkingDisabled   bool
 	authedData         bool
 	z                  bool
-	recursionAvailable bool
+	RecursionAvailable bool
 
 	Questions            uint16
 	answers              uint16
@@ -341,13 +341,13 @@ func (header *DnsHeader) read(buffer *BytePacketBuffer) error {
 	header.truncatedMessage = (a & (1 << 1)) > 0
 	header.authoritativeAnswer = (a & (1 << 2)) > 0
 	header.opcode = (a >> 3) & 0x0F
-	header.response = (a & (1 << 7)) > 0
+	header.Response = (a & (1 << 7)) > 0
 
-	header.rescode = ResultCode(b & 0x0F)
+	header.Rescode = ResultCode(b & 0x0F)
 	header.checkingDisabled = (b & (1 << 4)) > 0
 	header.authedData = (b & (1 << 5)) > 0
 	header.z = (b & (1 << 6)) > 0
-	header.recursionAvailable = (b & (1 << 7)) > 0
+	header.RecursionAvailable = (b & (1 << 7)) > 0
 
 	header.Questions, err = buffer.readU16()
 	if err != nil {
@@ -382,18 +382,18 @@ func (h *DnsHeader) write(buffer *BytePacketBuffer) error {
 	flags1 |= uint8(boolToUint(h.truncatedMessage)) << 1
 	flags1 |= uint8(boolToUint(h.authoritativeAnswer)) << 2
 	flags1 |= h.opcode << 3
-	flags1 |= uint8(boolToUint(h.response)) << 7
+	flags1 |= uint8(boolToUint(h.Response)) << 7
 
 	err = buffer.writeU8(flags1)
 	if err != nil {
 		return err
 	}
 
-	flags2 := uint8(h.rescode)
+	flags2 := uint8(h.Rescode)
 	flags2 |= uint8(boolToUint(h.checkingDisabled)) << 4
 	flags2 |= uint8(boolToUint(h.authedData)) << 5
 	flags2 |= uint8(boolToUint(h.z)) << 6
-	flags2 |= uint8(boolToUint(h.recursionAvailable)) << 7
+	flags2 |= uint8(boolToUint(h.RecursionAvailable)) << 7
 
 	err = buffer.writeU8(flags2)
 	if err != nil {
